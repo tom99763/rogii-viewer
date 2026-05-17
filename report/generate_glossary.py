@@ -225,6 +225,149 @@ def draw_md_tvd_tvt():
 
 
 # ---------------------------------------------------------------------------
+# Diagram 2b: TVT — typewell vs horizontal well (the definition diagram)
+# ---------------------------------------------------------------------------
+def draw_tvt_definition():
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5.5), constrained_layout=True)
+
+    # Common geology: 5 dipping layers shared by panels (a) and (b)
+    layer_y_at_x0 = [-1.2, -2.2, -3.0, -3.8, -4.6, -5.7]
+    layer_names = ["ANCC", "ASTNU", "ASTNL", "EGFDU", "EGFDL", "BUDA"]
+    layer_colors = ["#c4d3e6", "#9eb9d6", "#7aa1c5",
+                    "#dfb88a", "#c8965d", "#a17a55"]
+    dip = 0.18
+    xs = np.linspace(0, 10, 100)
+    horizons_at = lambda y0: y0 + dip * (xs - 5)
+
+    # Each panel has a TVT scale on the LEFT side
+    def add_tvt_scale(ax, xpos=0.05):
+        """Draw a vertical TVT scale at the chosen x position with ticks at each layer top."""
+        ax.plot([xpos, xpos], [-6.2, -0.6], color="#9333ea", lw=2.5)
+        # tick marks at each layer top elevation, with TVT label
+        tvt_labels = [11200, 11300, 11400, 11500, 11600, 11700]
+        for y0, tvt_lab in zip(layer_y_at_x0, tvt_labels):
+            ax.plot([xpos - 0.10, xpos + 0.10], [y0, y0],
+                    color="#9333ea", lw=1.4)
+            ax.text(xpos - 0.18, y0, f"{tvt_lab:,}", color="#9333ea",
+                    fontsize=8, ha="right", va="center")
+        ax.text(xpos - 0.05, -0.35, "TVT\nscale\n(ft)", color="#9333ea",
+                fontsize=9, weight="bold", ha="center", va="bottom")
+        ax.annotate("", xy=(xpos, -6.2), xytext=(xpos, -0.6),
+                    arrowprops=dict(arrowstyle="-|>", color="#9333ea", lw=1.0))
+
+    def draw_layers(ax):
+        layer_lines = [horizons_at(y) for y in layer_y_at_x0]
+        layer_lines = [horizons_at(-0.4)] + layer_lines + [horizons_at(-6.2)]
+        for i, c in enumerate(["#e8eaed"] + layer_colors):
+            ax.fill_between(xs, layer_lines[i], layer_lines[i + 1],
+                            color=c, alpha=0.78)
+            ax.plot(xs, layer_lines[i + 1], color="#666", lw=0.4)
+        # Layer name labels on the right
+        for y0, name, c in zip(layer_y_at_x0, layer_names, layer_colors):
+            y_rt = y0 + dip * (10 - 5)
+            ax.text(10.15, y_rt - 0.18, name, fontsize=7.5, color="#444", va="center")
+
+    # ---------- PANEL (a): TYPEWELL — TVT is direct ----------
+    ax = axes[0]
+    ax.axis("off")
+    ax.set_xlim(-0.55, 10.6)
+    ax.set_ylim(-7.0, -0.0)
+    ax.plot([-0.5, 10], [-0.4, -0.4], color="#3a7d3a", lw=2.0)
+    ax.text(-0.5, -0.18, "Surface", fontsize=9, color="#3a7d3a")
+    draw_layers(ax)
+    add_tvt_scale(ax, xpos=0.0)
+
+    # Typewell at x=2.0 going straight down
+    tw_x = 2.0
+    ax.plot([tw_x, tw_x], [-0.45, -6.0], color="black", lw=3.2,
+            solid_capstyle="round")
+    ax.plot([tw_x, tw_x], [-0.45, -6.0], color="white", lw=1.0, ls=(0, (1, 1)))
+    ax.text(tw_x, -6.4, "TYPEWELL\n(vertical)",
+            ha="center", fontsize=9, color="black", weight="bold")
+    # Horizontal connectors from typewell points to TVT scale at that elevation
+    for y0 in layer_y_at_x0:
+        y_at_tw = horizons_at(y0)[int(tw_x / 10 * (len(xs) - 1))]
+        ax.plot([0.0, tw_x], [y_at_tw, y_at_tw],
+                color="#9333ea", lw=0.8, ls=":", alpha=0.6)
+        ax.scatter(tw_x, y_at_tw, s=20, color="#9333ea", zorder=4)
+    ax.text(tw_x + 0.35, -3.3,
+            "Typewell drills straight down\nthrough every layer.\n\n"
+            "At each row, TVT is\nthe well's physical depth\n(directly measured).",
+            fontsize=9, color="#444", va="center")
+    ax.set_title("(a) Typewell — TVT is DIRECT", fontsize=12, weight="bold",
+                 color="#1a5f9e")
+
+    # ---------- PANEL (b): HORIZONTAL WELL — TVT is INFERRED ----------
+    ax = axes[1]
+    ax.axis("off")
+    ax.set_xlim(-0.55, 10.6)
+    ax.set_ylim(-7.0, -0.0)
+    ax.plot([-0.5, 10], [-0.4, -0.4], color="#3a7d3a", lw=2.0)
+    ax.text(-0.5, -0.18, "Surface", fontsize=9, color="#3a7d3a")
+    draw_layers(ax)
+    add_tvt_scale(ax, xpos=0.0)
+
+    # Horizontal well: build from x=2, curving down to flat lateral that crosses 2 layers
+    hw_x = np.linspace(2, 10, 200)
+    hw_y = -1.2 + (-2.7) * (1 - np.exp(-(hw_x - 2) * 0.9))
+    # Add slight upward drift so well crosses two layers (EGFDU into EGFDL)
+    hw_y += 0.10 * (hw_x - 6)
+    ax.plot(hw_x, hw_y, color="#cc2222", lw=3.0, solid_capstyle="round")
+    ax.text(2.0, -1.05, "HORIZONTAL\nWELL", fontsize=9, color="#cc2222",
+            weight="bold")
+    # Choose 4 sample points on the lateral and project them to TVT axis
+    sample_idx = [60, 110, 160, 195]
+    for si in sample_idx:
+        px, py = hw_x[si], hw_y[si]
+        ax.scatter(px, py, s=55, color="#cc2222", zorder=5,
+                   edgecolor="black", linewidth=0.6)
+        # Projected TVT = y on the typewell axis would be SAME y value
+        # (because in our simple flat-layer schematic, the layer at this physical
+        # depth corresponds to the typewell at the same depth)
+        # Draw dashed projection back to TVT scale
+        ax.plot([px, 0.0], [py, py], color="#9333ea", lw=0.7, ls=":", alpha=0.55)
+        ax.scatter(0.0, py, s=22, color="#9333ea", zorder=4)
+    ax.text(4.6, -1.6,
+            "Bit moves SIDEWAYS through\ndipping layers. At each MD point\n"
+            "we ask: which layer is it in?\n→ that layer's TVT in the typewell\n"
+            "is the bit's TVT.",
+            fontsize=9, color="#444", va="center")
+    ax.text(7.5, -5.4, "TVT must be INFERRED\n(from GR matching)",
+            fontsize=9, color="#cc2222", weight="bold", style="italic")
+    ax.set_title("(b) Horizontal well — TVT is INFERRED", fontsize=12,
+                 weight="bold", color="#cc2222")
+
+    # ---------- PANEL (c): Real data — Z vs TVT for the demo well ----------
+    ax = axes[2]
+    md = demo_hw["MD"].to_numpy()
+    z = demo_hw["Z"].to_numpy()
+    tvt = demo_hw["TVT"].to_numpy()
+    tvt_input = demo_hw["TVT_input"].to_numpy()
+
+    # TWO y-axes on same MD axis: TVT (purple) and Z (blue)
+    ax.plot(md, tvt, color="#9333ea", lw=2.0, label="TVT  (geological coord)")
+    ax.set_xlabel("MD (ft)")
+    ax.set_ylabel("TVT (ft)", color="#9333ea")
+    ax.tick_params(axis="y", labelcolor="#9333ea")
+    ax.grid(alpha=0.3)
+    ax.axvline(demo_ps_md, color="#d05a5a", ls="--", lw=1.0, alpha=0.7,
+               label=f"Prediction Start (MD={demo_ps_md:.0f})")
+    ax.legend(loc="upper left", fontsize=8)
+
+    ax2 = ax.twinx()
+    ax2.plot(md, z, color="#1a5f9e", lw=1.5, label="Z  (elevation, geometric)")
+    ax2.set_ylabel("Z (ft)  — elevation", color="#1a5f9e")
+    ax2.tick_params(axis="y", labelcolor="#1a5f9e")
+    ax2.legend(loc="lower right", fontsize=8)
+
+    ax.set_title(f"(c) Real data: {DEMO_WELL}\n"
+                 "TVT vs Z along the well — different coordinate systems!",
+                 fontsize=11)
+
+    save_fig("tvt_definition", fig)
+
+
+# ---------------------------------------------------------------------------
 # Diagram 3: GR as the geological fingerprint
 # ---------------------------------------------------------------------------
 def draw_gr_concept():
@@ -401,6 +544,7 @@ def draw_inverse_cartoon():
 
 draw_master()
 draw_md_tvd_tvt()
+draw_tvt_definition()
 draw_gr_concept()
 draw_typewell_vs_hw()
 draw_horizons()
@@ -513,6 +657,48 @@ different dipping geometry). TVT lives in the typewell&apos;s frame — it is
 designed to be a coordinate that <i>moves with the geology</i>, not with the
 geometric depth.
 </blockquote>
+
+<h3>2.1 &nbsp;TVT in detail — the same scale, two ways to obtain it</h3>
+""" + img("tvt_definition", "TVT typewell vs horizontal well") + """
+<p>
+This is the single most important concept in the dataset: <b>both wells share
+the SAME TVT scale</b> (purple axis on the left of panels a and b) — it is the
+&ldquo;floor numbering&rdquo; of the geological building. The only difference
+is <i>how</i> we get TVT for each well type.
+</p>
+<table class="data">
+  <thead><tr><th>Well type</th><th>How TVT is obtained</th><th>What it looks like in the CSV</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><span class="term">Typewell (vertical)</span></td>
+      <td><b>Direct measurement.</b> The well drills straight down through every
+          layer; TVT = its physical depth (panel a). Like an elevator that
+          records its floor as it descends.</td>
+      <td><code>TVT</code> column, sampled every 0.5 ft of true depth. Range
+          ~11,224 – 11,871 ft for the demo well.</td>
+    </tr>
+    <tr>
+      <td><span class="term">Horizontal well (lateral)</span></td>
+      <td><b>Must be inferred.</b> The bit travels sideways through dipping
+          layers (panel b). At each MD point we ask: &ldquo;which layer is the
+          bit in?&rdquo; That layer&apos;s TVT in the typewell <b>is</b> the
+          bit&apos;s TVT — but to identify the layer we need to match GR
+          signatures.</td>
+      <td><code>TVT</code> column (training only); <code>TVT_input</code>
+          available only before PS at inference. This is the column we predict.</td>
+    </tr>
+  </tbody>
+</table>
+<p>
+Panel (c) shows real data from the demo well: <code>TVT</code> (purple) lives
+in the geological coordinate frame and stays within a relatively narrow band
+(the Eagle Ford zone, ~11,200&ndash;11,800 ft); <code>Z</code> (blue) is the
+geometric elevation in the surveying coordinate frame and tracks the
+wellbore&apos;s actual physical position. They are clearly <b>two different
+coordinates</b> of the same MD axis. The competition asks us to recover the
+purple curve given the geometric Z, the observed GR, and the typewell
+GR(TVT) dictionary.
+</p>
 
 <h2>3. GR — the gamma-ray log, geology&apos;s fingerprint</h2>
 """ + img("gr_concept", "GR concept") + """
