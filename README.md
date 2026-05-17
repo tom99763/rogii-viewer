@@ -46,41 +46,72 @@ Kaggle-format predictions CSV to see how your model is doing against the truth, 
 
 ---
 
-## Quickstart (from source)
+## Quickstart
 
-### 1. Clone the repo
+Pick the path that matches your machine. All three paths share the same prerequisites:
 
-```bash
-git clone https://github.com/tom99763/rogii-viewer.git
-cd rogii-viewer
-```
+1. **Clone the repo:**
+   ```bash
+   git clone https://github.com/tom99763/rogii-viewer.git
+   cd rogii-viewer
+   ```
+2. **Download the dataset** (~800 MB, not bundled here):
+   ```bash
+   kaggle competitions download -c rogii-wellbore-geology-prediction
+   unzip rogii-wellbore-geology-prediction.zip -d rogii-wellbore-geology-prediction/
+   ```
+   The viewer auto-loads `~/ROGII/rogii-wellbore-geology-prediction/` if it exists; otherwise use
+   **File → Open dataset folder…** to point at any folder containing `train/` and/or `test/`
+   subfolders with `<well_id>__horizontal_well.csv` + `<well_id>__typewell.csv` pairs.
 
-### 2. Install dependencies
+### Path A — Run from source on Linux / WSL / macOS (fastest)
 
-Requires Python 3.10+.
+Requires Python 3.10+ and a working display.
 
 ```bash
 pip install -r viewer/requirements.txt
-```
-
-### 3. Download the dataset
-
-The Kaggle dataset is not bundled in this repo (~800 MB). Download it via the Kaggle CLI:
-
-```bash
-kaggle competitions download -c rogii-wellbore-geology-prediction
-unzip rogii-wellbore-geology-prediction.zip -d rogii-wellbore-geology-prediction/
-```
-
-The viewer auto-loads `~/ROGII/rogii-wellbore-geology-prediction/` if it exists; otherwise use
-**File → Open dataset folder…** and pick any folder that contains `train/` and/or `test/` subfolders
-with `<well_id>__horizontal_well.csv` and `<well_id>__typewell.csv` pairs.
-
-### 4. Run
-
-```bash
 python -m viewer
 ```
+
+> **WSL note:** the GUI relies on WSLg, which ships with Windows 11 + WSL2. If the window doesn't
+> appear, you're either on Windows 10 (install [VcXsrv](https://sourceforge.net/projects/vcxsrv/) and
+> `export DISPLAY=:0`) or missing WSLg — easiest workaround is to use Path B on the Windows side.
+
+### Path B — Run from source on Windows (no .exe build needed)
+
+Requires a Windows Python 3.10+ install (download from [python.org](https://www.python.org/downloads/)
+and tick *"Add Python to PATH"*).
+
+Open **PowerShell** or **cmd** (not WSL):
+
+```cmd
+cd %USERPROFILE%\rogii-viewer
+pip install -r viewer\requirements.txt
+python -m viewer
+```
+
+### Path C — Build a standalone Windows `.exe`
+
+Best for sharing with someone who has no Python install. The build must run on **Windows** — PyInstaller
+can only emit a binary for the OS it runs on, so a WSL build will produce a Linux binary, not `.exe`.
+
+In Windows PowerShell or cmd:
+
+```cmd
+cd %USERPROFILE%\rogii-viewer
+viewer\build.bat
+```
+
+`build.bat` installs PyInstaller, calls it with the right flags, and produces
+`dist\ROGIIViewer.exe` (~80 MB; bundles PySide6 + pyqtgraph + NumPy + pandas). Then either
+double-click it in Explorer or run:
+
+```cmd
+dist\ROGIIViewer.exe
+```
+
+The `.exe` is fully self-contained — copy `dist\ROGIIViewer.exe` to any other Windows machine and
+double-click. The first launch takes a few seconds while PyInstaller unpacks its bundle.
 
 ---
 
@@ -107,20 +138,17 @@ This is the easiest way to spot per-well failure modes that an aggregate Kaggle 
 
 ---
 
-## Building the Windows .exe
+## Troubleshooting
 
-The repo ships with `viewer/build.bat`. Run it from a **Windows** shell with a Windows Python install:
-
-```cmd
-cd path\to\rogii-viewer
-viewer\build.bat
-```
-
-This calls PyInstaller with the right flags and produces `dist\ROGIIViewer.exe` (~80 MB; bundles
-PySide6 + pyqtgraph + NumPy + pandas). Drop it on any Windows machine and double-click.
-
-> **Note:** PyInstaller can only produce executables for the OS it runs on. To build a Linux/macOS
-> binary, run `build.bat`'s equivalent on that platform — substitute the slashes and drop `.bat`.
+| Symptom | Likely cause / fix |
+|---|---|
+| `python -m viewer` errors with `ModuleNotFoundError: PySide6` | Run `pip install -r viewer/requirements.txt` from the repo root first. |
+| Window opens but the well list is empty | No dataset detected. Open **File → Open dataset folder…** and pick a folder with `train/` and/or `test/`. |
+| Loading is sluggish on first click of a large well | Normal — pyqtgraph caches after the first render. Subsequent clicks are instant. |
+| Predictions CSV loads but the right panel says "RMSE: —" | Either no rows in the CSV matched the current well, or you're viewing a test well (no truth available). RMSE only computes for train wells. |
+| WSL: window never appears | You're on Windows 10 (no WSLg). Use Path B (run on Windows side) or install [VcXsrv](https://sourceforge.net/projects/vcxsrv/) + `export DISPLAY=:0`. |
+| `build.bat` errors with `'python' is not recognized` | Windows-side Python isn't on PATH. Reinstall Python from python.org with *"Add Python to PATH"* ticked. |
+| `.exe` won't launch — "VCRUNTIME140.dll missing" | Install the [Microsoft Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe). |
 
 ---
 
