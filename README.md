@@ -137,9 +137,13 @@ PySide6 + pyqtgraph + NumPy + pandas). Drop it on any Windows machine and double
 │   ├── requirements.txt
 │   ├── build.bat                # Windows .exe packaging
 │   └── docs/                    # screenshots for this README
-├── report/                      # Standalone EDA report (HTML + CSVs)
-│   ├── generate_report.py       # rebuilds the report end-to-end
-│   ├── eda_report.html          # self-contained interactive(ish) EDA
+├── report/                      # Knowledge-base HTML reports (+ CSVs)
+│   ├── index.html               # ← start here: consolidated front page
+│   ├── eda_report.html          # deep EDA over all 773 wells
+│   ├── competition_overview.html# inverse-problem framing + method portfolio (MathJax)
+│   ├── generate_index.py        # rebuilds index.html
+│   ├── generate_report.py       # rebuilds eda_report.html
+│   ├── generate_overview.py     # rebuilds competition_overview.html
 │   ├── well_summary.csv         # one row per horizontal well, ~30 features
 │   ├── typewell_summary.csv
 │   ├── baseline_rmse.csv        # RMSE floors for 3 trivial baselines
