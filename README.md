@@ -69,13 +69,61 @@ Pick the path that matches your machine. All three paths share the same prerequi
 Requires Python 3.10+ and a working display.
 
 ```bash
+# 1. install dependencies into your active env
 pip install -r viewer/requirements.txt
+
+# 2. launch
 python -m viewer
 ```
 
-> **WSL note:** the GUI relies on WSLg, which ships with Windows 11 + WSL2. If the window doesn't
-> appear, you're either on Windows 10 (install [VcXsrv](https://sourceforge.net/projects/vcxsrv/) and
-> `export DISPLAY=:0`) or missing WSLg — easiest workaround is to use Path B on the Windows side.
+If the window opens, you're done. **If you hit any Qt error, just use the bundled launcher
+script** which sets the right environment variables for you:
+
+```bash
+bash viewer/run.sh
+```
+
+#### A.1 — If you see a Qt platform plugin error
+
+In **conda environments**, you commonly hit this:
+
+```
+qt.qpa.plugin: Could not find the Qt platform plugin "wayland" in ""
+qt.qpa.plugin: Could not find the Qt platform plugin "xcb" in ""
+This application failed to start because no Qt platform plugin could be initialized.
+Aborted (core dumped)
+```
+
+This means another Qt (typically a conda-installed Qt 6.5/6.6) is being preferred over
+PySide6's bundled Qt 6.11, and the version mismatch causes Qt to reject every platform plugin.
+
+**Fix — point Qt at PySide6's bundled plugins explicitly:**
+
+```bash
+# one-liner (one-off)
+QT_PLUGIN_PATH=$(python -c "import os, PySide6; print(os.path.join(os.path.dirname(PySide6.__file__), 'Qt', 'plugins'))") \
+QT_QPA_PLATFORM=wayland \
+python -m viewer
+```
+
+**Make it permanent** (so plain `python -m viewer` works):
+
+```bash
+cat >> ~/.bashrc <<'EOF'
+
+# ROGII viewer / PySide6 fix: override conda Qt6 with PySide6 bundled Qt
+export QT_PLUGIN_PATH="$(python -c 'import os, PySide6; print(os.path.join(os.path.dirname(PySide6.__file__), "Qt", "plugins"))' 2>/dev/null)"
+export QT_QPA_PLATFORM=wayland
+EOF
+source ~/.bashrc
+```
+
+> **Notes**
+> - `QT_QPA_PLATFORM=wayland` works on **WSLg (Windows 11)** and most modern Linux desktops.
+>   If you're on **Windows 10 WSL** (no WSLg), drop the `QT_QPA_PLATFORM` line and install an X
+>   server like [VcXsrv](https://sourceforge.net/projects/vcxsrv/), then `export DISPLAY=:0`.
+> - If `xcb` is the only option and it complains about missing libs, install them:
+>   `sudo apt install -y libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 libxcb-xkb1 libxkbcommon-x11-0`
 
 ### Path B — Run from source on Windows (no .exe build needed)
 
@@ -142,11 +190,12 @@ This is the easiest way to spot per-well failure modes that an aggregate Kaggle 
 
 | Symptom | Likely cause / fix |
 |---|---|
-| `python -m viewer` errors with `ModuleNotFoundError: PySide6` | Run `pip install -r viewer/requirements.txt` from the repo root first. |
+| `python -m viewer` errors with `ModuleNotFoundError: PySide6` | Run `pip install -r viewer/requirements.txt` from the repo root first. If you use conda, make sure you installed into the active env (`which python` should point inside your env). |
+| `qt.qpa.plugin: Could not find the Qt platform plugin "wayland"/"xcb"` | Conda Qt6 version-mismatches PySide6's bundled Qt. See **Path A.1** above for the `QT_PLUGIN_PATH` + `QT_QPA_PLATFORM=wayland` one-liner. |
 | Window opens but the well list is empty | No dataset detected. Open **File → Open dataset folder…** and pick a folder with `train/` and/or `test/`. |
 | Loading is sluggish on first click of a large well | Normal — pyqtgraph caches after the first render. Subsequent clicks are instant. |
 | Predictions CSV loads but the right panel says "RMSE: —" | Either no rows in the CSV matched the current well, or you're viewing a test well (no truth available). RMSE only computes for train wells. |
-| WSL: window never appears | You're on Windows 10 (no WSLg). Use Path B (run on Windows side) or install [VcXsrv](https://sourceforge.net/projects/vcxsrv/) + `export DISPLAY=:0`. |
+| WSL: window never appears even after the Qt fix | You're on Windows 10 (no WSLg). Use Path B (run on Windows side) or install [VcXsrv](https://sourceforge.net/projects/vcxsrv/) + `export DISPLAY=:0`. |
 | `build.bat` errors with `'python' is not recognized` | Windows-side Python isn't on PATH. Reinstall Python from python.org with *"Add Python to PATH"* ticked. |
 | `.exe` won't launch — "VCRUNTIME140.dll missing" | Install the [Microsoft Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe). |
 
