@@ -1,0 +1,44 @@
+# --- Dataset (download from Kaggle, don't commit) ---
+rogii-wellbore-geology-prediction/
+rogii-wellbore-geology-prediction.zip
+*.zip
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Virtual envs ---
+.venv/
+venv/
+env/
+.python-version
+
+# --- PyInstaller build artifacts ---
+build/
+dist/
+*.spec
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- WSL metadata sidecar files ---
+*:Zone.Identifier
+
+# --- Local CSV outputs / scratch ---
+/tmp_*
+*.local.csv
+
+# --- Claude Code project state ---
+.claude/
