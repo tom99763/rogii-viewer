@@ -16,6 +16,7 @@ from viewer.data import (
     predictions_aligned_to_hw,
     rmse,
 )
+from viewer.heatmap import HAS_DTW, HeatmapBundle, compute_gr_heatmap, map_path_to_tvt
 
 pg.setConfigOptions(antialias=True, background="w", foreground="#1f2933")
 
@@ -383,3 +384,243 @@ class TVTPredictionWidget(QtWidgets.QWidget):
                 if w.has_truth and np.isfinite(truth).any():
                     rmse_val = rmse(tvt_p, truth)
         return rmse_val, n_pred
+
+
+# ---------------------------------------------------------------------------
+# GR mismatch heatmap (hengck23-style) + DTW / ground-truth path overlays
+# ---------------------------------------------------------------------------
+class GRHeatmapWidget(QtWidgets.QWidget):
+    """Heatmap-based DTW alignment view of HW GR against the typewell GR.
+
+    Top:    `heatmap[i, j] = HW_seg_GR[j] - typewell_seg_GR[i]` with two path
+            overlays — yellow = ground-truth typewell-row index per HW segment
+            (only when TVT is available), orange dashed = DTW-computed path.
+    Below:  three small panels — HW GR per segment (colored by index), typewell
+            GR vs TVT, and the GR profile in TVT coordinates (typewell GR with
+            the HW segments projected back via the DTW path).
+    """
+
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
+        super().__init__(parent)
+        root = QtWidgets.QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(4)
+
+        # Controls row
+        ctl = QtWidgets.QHBoxLayout()
+        ctl.setContentsMargins(6, 4, 6, 0)
+        ctl.addWidget(QtWidgets.QLabel("Segment size S (ft):"))
+        self.s_spin = QtWidgets.QSpinBox()
+        self.s_spin.setRange(4, 128)
+        self.s_spin.setValue(32)
+        self.s_spin.setSingleStep(4)
+        ctl.addWidget(self.s_spin)
+        ctl.addSpacing(12)
+        ctl.addWidget(QtWidgets.QLabel("Before PS:"))
+        self.before_spin = QtWidgets.QSpinBox()
+        self.before_spin.setRange(0, 64)
+        self.before_spin.setValue(8)
+        ctl.addWidget(self.before_spin)
+        ctl.addWidget(QtWidgets.QLabel("After PS:"))
+        self.after_spin = QtWidgets.QSpinBox()
+        self.after_spin.setRange(1, 256)
+        self.after_spin.setValue(16)
+        ctl.addWidget(self.after_spin)
+        ctl.addSpacing(12)
+        self.show_gt = QtWidgets.QCheckBox("Ground truth")
+        self.show_gt.setChecked(True)
+        ctl.addWidget(self.show_gt)
+        self.show_dtw = QtWidgets.QCheckBox("DTW path")
+        self.show_dtw.setChecked(HAS_DTW)
+        self.show_dtw.setEnabled(HAS_DTW)
+        if not HAS_DTW:
+            self.show_dtw.setToolTip("dtw-python is not installed (pip install dtw-python)")
+        ctl.addWidget(self.show_dtw)
+        ctl.addStretch(1)
+        self.refresh_btn = QtWidgets.QPushButton("Refresh")
+        ctl.addWidget(self.refresh_btn)
+        self.status = QtWidgets.QLabel("")
+        self.status.setStyleSheet("color: #6b7280; font-size: 11px;")
+        ctl.addWidget(self.status)
+        root.addLayout(ctl)
+
+        # Plot stack
+        self.glw = pg.GraphicsLayoutWidget()
+        root.addWidget(self.glw, stretch=1)
+
+        # Top row: big heatmap (full width)
+        self.heatmap_plot: pg.PlotItem = self.glw.addPlot(row=0, col=0, colspan=3)
+        self.heatmap_plot.setLabel("bottom", "HW segment index (centered at PS)")
+        self.heatmap_plot.setLabel("left", "Typewell row index")
+        self.heatmap_plot.invertY(True)
+        self.heatmap_plot.setMenuEnabled(False)
+        self.heatmap_image = pg.ImageItem(axisOrder="row-major")
+        self.heatmap_plot.addItem(self.heatmap_image)
+        # Diverging colormap — like hengck23's "seismic"/"bwr"
+        cmap = pg.colormap.get("CET-D1A") or pg.colormap.get("seismic")
+        self.heatmap_lut = cmap.getLookupTable(0.0, 1.0, 256)
+        self.heatmap_image.setLookupTable(self.heatmap_lut)
+        # Colorbar
+        self.cbar = pg.ColorBarItem(values=(-40, 40), colorMap=cmap, label="GR difference",
+                                    interactive=False)
+        self.cbar.setImageItem(self.heatmap_image, insert_in=self.heatmap_plot)
+
+        # Bottom row: three small panels
+        self.hw_plot: pg.PlotItem = self.glw.addPlot(row=1, col=0)
+        self.hw_plot.setLabel("bottom", "HW segment index")
+        self.hw_plot.setLabel("left", "GR (smoothed, per seg)")
+        self.hw_plot.setTitle("Horizontal-well GR per segment")
+        self.hw_plot.showGrid(x=True, y=True, alpha=0.25)
+
+        self.tw_plot: pg.PlotItem = self.glw.addPlot(row=1, col=1)
+        self.tw_plot.setLabel("bottom", "GR")
+        self.tw_plot.setLabel("left", "TVT (ft)")
+        self.tw_plot.setTitle("Typewell GR vs TVT")
+        self.tw_plot.invertY(True)
+        self.tw_plot.showGrid(x=True, y=True, alpha=0.25)
+
+        self.tvt_plot: pg.PlotItem = self.glw.addPlot(row=1, col=2)
+        self.tvt_plot.setLabel("bottom", "TVT (ft)")
+        self.tvt_plot.setLabel("left", "GR")
+        self.tvt_plot.setTitle("HW segments projected onto TVT (DTW)")
+        self.tvt_plot.showGrid(x=True, y=True, alpha=0.25)
+
+        self._current: Optional[WellBundle] = None
+
+        # Wire interactions
+        self.refresh_btn.clicked.connect(self._refresh)
+        self.show_gt.toggled.connect(self._refresh)
+        self.show_dtw.toggled.connect(self._refresh)
+        self.s_spin.editingFinished.connect(self._refresh)
+        self.before_spin.editingFinished.connect(self._refresh)
+        self.after_spin.editingFinished.connect(self._refresh)
+
+    # ------------------------------------------------------------------
+    def show_well(self, w: WellBundle) -> None:
+        self._current = w
+        self._refresh()
+
+    def _refresh(self) -> None:
+        w = self._current
+        if w is None or w.ps_idx is None:
+            self.heatmap_plot.clear()
+            self.heatmap_plot.addItem(self.heatmap_image)
+            self.heatmap_image.setImage(np.zeros((1, 1), dtype=np.float32))
+            self.hw_plot.clear()
+            self.tw_plot.clear()
+            self.tvt_plot.clear()
+            self.status.setText("(no well loaded)")
+            return
+
+        try:
+            bundle = compute_gr_heatmap(
+                w.hw, w.tw, w.ps_idx,
+                S=int(self.s_spin.value()),
+                n_before=int(self.before_spin.value()),
+                n_after=int(self.after_spin.value()),
+                run_dtw=bool(self.show_dtw.isChecked()),
+            )
+        except Exception as exc:
+            self.heatmap_plot.clear()
+            self.heatmap_plot.addItem(self.heatmap_image)
+            self.heatmap_image.setImage(np.zeros((1, 1), dtype=np.float32))
+            self.hw_plot.clear()
+            self.tw_plot.clear()
+            self.tvt_plot.clear()
+            self.status.setText(f"compute failed: {exc}")
+            return
+
+        # Heatmap image: extent = [x0, y0, x_span, y_span]; we want x = HW seg
+        # index (0..n_hw), y = typewell row index (0..n_tw).
+        self.heatmap_image.setImage(
+            bundle.heatmap,
+            autoLevels=False,
+            levels=(-40.0, 40.0),
+        )
+        # Position the image so (x, y) = (seg_index, row_index) with 1:1 cells
+        self.heatmap_image.setRect(QtCore.QRectF(0, 0, bundle.n_hw, bundle.n_tw))
+        # Reset overlay items (paths + PS line)
+        for item in list(self.heatmap_plot.items):
+            if isinstance(item, (pg.PlotDataItem, pg.InfiniteLine)) and item is not self.heatmap_image:
+                self.heatmap_plot.removeItem(item)
+
+        # PS marker
+        ps_line = pg.InfiniteLine(
+            pos=bundle.ps_seg_index + 0.5, angle=90,
+            pen=pg.mkPen("#1f2933", width=1.2, style=QtCore.Qt.DashLine),
+            label=f"PS (seg {bundle.ps_seg_index})",
+            labelOpts={"position": 0.05, "color": "#1f2933"},
+        )
+        self.heatmap_plot.addItem(ps_line)
+
+        # Ground-truth path (yellow)
+        if self.show_gt.isChecked() and bundle.gt_path is not None:
+            xs = np.arange(bundle.n_hw) + 0.5
+            ys = bundle.gt_path.astype(float) + 0.5
+            self.heatmap_plot.plot(xs, ys,
+                                   pen=pg.mkPen("#000000", width=4),
+                                   name="GT")
+            self.heatmap_plot.plot(xs, ys,
+                                   pen=pg.mkPen("#f4d03f", width=2),
+                                   name="GT")
+        # DTW path (orange dashed)
+        if self.show_dtw.isChecked() and bundle.dtw_path is not None:
+            xs = np.arange(bundle.n_hw) + 0.5
+            ys = bundle.dtw_path.astype(float) + 0.5
+            self.heatmap_plot.plot(xs, ys,
+                                   pen=pg.mkPen("#e9924b", width=2.0,
+                                                style=QtCore.Qt.DashLine),
+                                   name="DTW")
+
+        # HW GR panel
+        self.hw_plot.clear()
+        seg_idx = np.arange(bundle.n_hw)
+        self.hw_plot.plot(seg_idx, bundle.h_seg_gr,
+                          pen=pg.mkPen("#e9924b", width=1.5))
+        self.hw_plot.plot(seg_idx, bundle.h_seg_gr,
+                          pen=None, symbol="o", symbolSize=6,
+                          symbolPen=None,
+                          symbolBrush=[pg.intColor(i, hues=max(bundle.n_hw, 6))
+                                       for i in range(bundle.n_hw)])
+        self.hw_plot.addItem(pg.InfiniteLine(pos=bundle.ps_seg_index, angle=90,
+                                             pen=pg.mkPen("#d05a5a", width=1.2,
+                                                          style=QtCore.Qt.DashLine)))
+
+        # TW GR panel — GR (x) vs TVT (y, inverted)
+        self.tw_plot.clear()
+        self.tw_plot.plot(bundle.t_seg_gr, bundle.t_seg_tvt,
+                          pen=pg.mkPen("#1f2933", width=1.4))
+
+        # GR profile in TVT coordinates: typewell line + HW segments at DTW TVT
+        self.tvt_plot.clear()
+        self.tvt_plot.plot(bundle.t_seg_tvt, bundle.t_seg_gr,
+                           pen=pg.mkPen("#1f2933", width=1.3), name="typewell")
+        if bundle.dtw_path is not None and self.show_dtw.isChecked():
+            tvt_hw = map_path_to_tvt(bundle.dtw_path, bundle.t_seg_tvt)
+            self.tvt_plot.plot(tvt_hw, bundle.h_seg_gr,
+                               pen=pg.mkPen("#e9924b", width=1.2),
+                               symbol="o", symbolSize=6,
+                               symbolPen=None,
+                               symbolBrush=[pg.intColor(i, hues=max(bundle.n_hw, 6))
+                                            for i in range(bundle.n_hw)],
+                               name="HW (DTW projected)")
+        elif bundle.gt_path is not None and self.show_gt.isChecked():
+            tvt_hw = map_path_to_tvt(bundle.gt_path, bundle.t_seg_tvt)
+            self.tvt_plot.plot(tvt_hw, bundle.h_seg_gr,
+                               pen=pg.mkPen("#f4d03f", width=1.2),
+                               symbol="o", symbolSize=6,
+                               symbolPen=None,
+                               symbolBrush=[pg.intColor(i, hues=max(bundle.n_hw, 6))
+                                            for i in range(bundle.n_hw)],
+                               name="HW (GT projected)")
+
+        # Status line: brief alignment quality summary
+        parts = [f"S={bundle.S} ft", f"HW={bundle.n_hw} segs", f"TW={bundle.n_tw} rows"]
+        if bundle.gt_path is not None and bundle.dtw_path is not None:
+            disagreement = int(np.sum(bundle.gt_path != bundle.dtw_path))
+            parts.append(f"DTW≠GT on {disagreement}/{bundle.n_hw} segs")
+        elif bundle.gt_path is None:
+            parts.append("(no GT — test well)")
+        if not HAS_DTW:
+            parts.append("(install dtw-python for DTW)")
+        self.status.setText("   ·   ".join(parts))

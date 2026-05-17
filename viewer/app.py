@@ -20,6 +20,7 @@ from viewer.data import (
 from viewer.plots import (
     CrossSectionWidget,
     GRCorrelationWidget,
+    GRHeatmapWidget,
     MapWidget,
     TVTPredictionWidget,
 )
@@ -167,9 +168,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.current_well: Optional[WellBundle] = None
         self.predictions: Optional[Predictions] = None
 
-        # Central area: three plot tabs in a splitter layout
+        # Central area: plot tabs in a splitter layout
         self.cross_section = CrossSectionWidget()
         self.gr_corr = GRCorrelationWidget()
+        self.gr_heatmap = GRHeatmapWidget()
         self.tvt_pred = TVTPredictionWidget()
         self.map_view = MapWidget()
 
@@ -177,6 +179,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs.addTab(self.cross_section, "Cross-Section (Z vs MD)")
         self.tabs.addTab(self.tvt_pred, "TVT Prediction vs MD")
         self.tabs.addTab(self.gr_corr, "GR Correlation")
+        self.tabs.addTab(self.gr_heatmap, "GR Mismatch + DTW")
         self.tabs.addTab(self.map_view, "Map View")
         self.setCentralWidget(self.tabs)
 
@@ -371,6 +374,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Render all plots
         self.cross_section.show_well(w)
         self.gr_corr.show_well(w, pred_for_well=pred_for_well)
+        self.gr_heatmap.show_well(w)
         rmse_val, n_pred = self.tvt_pred.show_well(w, pred_for_well=pred_for_well)
         # Neighbours for map
         neighbours = self._nearest_neighbours(w, k=8)

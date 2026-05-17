@@ -37,6 +37,7 @@ def main() -> int:
         "cross_section.png": win.cross_section,
         "tvt_prediction.png": win.tvt_pred,
         "gr_correlation.png": win.gr_corr,
+        "gr_heatmap.png": win.gr_heatmap,
         "map_view.png": win.map_view,
     }
     for name, widget in tabs.items():

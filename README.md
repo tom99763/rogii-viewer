@@ -21,6 +21,9 @@ Kaggle-format predictions CSV to see how your model is doing against the truth, 
   the Prediction Start marker; RMSE is computed instantly when truth is available.
 - **GR correlation view** — typewell GR vs TVT alongside the horizontal-well GR; supports overlaying
   predicted-TVT scatter for sanity checking signal alignment.
+- **GR mismatch heatmap + DTW** — hengck23-style misfit-image visualisation with ground-truth and DTW
+  path overlays. Tunable segment compression (S) and pre/post-PS window; per-well DTW-vs-truth
+  disagreement count. Requires `dtw-python` (`pip install dtw-python`) for the DTW path.
 - **Map view** — XY trajectories of every well, with the active well highlighted and the 8 nearest
   neighbours called out (offset-well exploration).
 - **Kaggle-format predictions CSV loader** — drag in any `submission.csv` with columns `id,tvt` (where
@@ -40,6 +43,17 @@ Kaggle-format predictions CSV to see how your model is doing against the truth, 
 
 ### GR correlation — typewell GR (black) vs horizontal-well GR (green) and prediction (red)
 ![GR correlation](viewer/docs/gr_correlation.png)
+
+### GR mismatch heatmap + DTW path — hengck23-style alignment debug view
+![GR mismatch + DTW](viewer/docs/gr_heatmap.png)
+
+Top: `heatmap[i, j] = HW_GR(seg j) − typewell_GR(row i)` centered at PS, with
+**ground-truth typewell-row trajectory in yellow** and **DTW alignment path in
+orange dashed**. The disagreement count between the two paths (shown in the
+status bar) is an honest measure of DTW quality on each well — and immediately
+surfaces the multi-modal ambiguity wells that motivate the inverse-problem
+framing in the docs. Tunable segment size (S), pre/post-PS window, and toggleable
+overlays. Requires `pip install dtw-python` for the DTW overlay.
 
 ### Map view — every well centroid, with the active well + 8 nearest neighbours
 ![Map view](viewer/docs/map_view.png)
